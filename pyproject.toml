@@ -1,0 +1,18 @@
+[project]
+name = "packages"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "rbms",
+    "ptt",
+    "scipy>=1.17.1",
+    "jupyter>=1.1.1",
+    "medmnist>=3.0.2",
+]
+
+[tool.uv.sources]
+rbms = {workspace = true}
+ptt = {workspace = true}
+
+[tool.uv.workspace]
+members = ["deps/*"]
