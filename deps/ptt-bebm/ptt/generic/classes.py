@@ -51,8 +51,6 @@ class PTT(Sampler):
         log_z_init: float,
         device: torch.device | str,
         dtype: torch.dtype,
-        sampler_kernel: str | None = None,
-        sampler_kernel_params: dict | None = None,
     ):
         self.device = device
         self.dtype = dtype
@@ -75,8 +73,6 @@ class PTT(Sampler):
         self.reservoir_size = reservoir_size
         self.n_sample_steps = n_sample_steps
         self.full_sampler = full_sampler
-        self.sampler_kernel = sampler_kernel
-        self.sampler_kernel_params = sampler_kernel_params or {}
         self.name = "PTT"
         self.flags = []
         self._hold_model: EBM | None = None
@@ -99,8 +95,6 @@ class PTT(Sampler):
                 log_z_init,
                 device,
                 dtype,
-                sampler_kernel,
-                sampler_kernel_params,
             )
 
     def __len__(self):
@@ -416,8 +410,6 @@ class PTT(Sampler):
             show_pbar=show_pbar,
             show_acc_rate=show_acc_rate,
             perform_swap=perform_swap,
-            sampler_kernel=self.sampler_kernel,
-            sampler_kernel_params=self.sampler_kernel_params,
         )
 
     def compute_partition_function(self) -> Tensor:

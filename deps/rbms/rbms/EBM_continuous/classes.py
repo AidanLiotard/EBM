@@ -321,14 +321,15 @@ class CEBM(EBM):
         chains: dict[str, Tensor],
         n_steps: int,
         beta: float = 1.0,
-        **kwargs,
+        **_,
     ) -> dict[str, Tensor]:
-        """Sample visible chains with adaptive HMC."""
-        kernel_params = kwargs.pop("kernel_params", {}) or {}
-        kernel_params = {**kernel_params, **kwargs}
+        """Sample visible chains with hardcoded adaptive HMC."""
 
-        if self.last_step_size is not None:
-            kernel_params["step_size"] = float(self.last_step_size.detach().cpu())
+        step_size = (
+            float(self.last_step_size.detach().cpu())
+            if self.last_step_size is not None
+            else 1e-2
+        )
 
         sampled_chains, info = sample_state_impl(
             energy=_ModelEnergyProxy(self),
@@ -339,7 +340,14 @@ class CEBM(EBM):
             n_steps=n_steps,
             sampler="hmc_adapt",
             beta=beta,
-            **kernel_params,
+            step_size=step_size,
+            num_leapfrog_steps=7,
+            mass=None,
+            target_acceptance=0.65,
+            adapt_step_size=True,
+            adapt_rate=0.05,
+            min_step_size=1e-5,
+            max_step_size=0.2,
         )
 
         self.last_acceptance = info.get("acceptance")

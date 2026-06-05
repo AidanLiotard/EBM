@@ -120,14 +120,13 @@ def add_args_init_rbm(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
     rbm_args.add_argument(
         "--energy_type",
         type=str,
-        default=None,
+        default="mlp",
         choices=[
             "mlp",
             "mlp_no_w2",
             "mlp_silu_no_w2",
             "mlp_sigmoid_no_w2",
             "rbm",
-            "gaussian",
             "cnn",
         ],
         help="Energy type to use when model_type is BEBM or CEBM.",
@@ -149,6 +148,7 @@ def add_sampling_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
         type=float,
         help="(Defaults to 1.0). The inverse temperature of the RBM",
     )
+    return parser
 
 
 def add_grad_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -328,7 +328,6 @@ default_args: dict[str, Any] = {
     "num_chains": 2000,
     "num_updates": 10000,
     "beta": 1.0,
-    "sampling_kernel": None,
     "restore": False,
     "seed": np.random.randint(0, 1000000000000),
     "no_center": False,

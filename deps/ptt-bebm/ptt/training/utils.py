@@ -20,36 +20,6 @@ from ptt.custom_fn import clone_dict
 from ptt.pre_sampler.reservoir import Reservoir
 
 
-def get_sampler_kernel_args_ptt(args: dict, params):
-    if getattr(params, "name", None) != "CEBM":
-        return None, {}
-
-    kernel_params = {}
-
-    if args["hmc_step_size"] is not None:
-        kernel_params["step_size"] = args["hmc_step_size"]
-
-    if args["hmc_step_size_target"] is not None:
-        kernel_params["step_size_target"] = args["hmc_step_size_target"]
-
-    if args["hmc_step_size_rate"] is not None:
-        kernel_params["step_size_rate"] = args["hmc_step_size_rate"]
-
-    if args["hmc_step_size_warmup"] is not None:
-        kernel_params["step_size_warmup"] = args["hmc_step_size_warmup"]
-
-    if args["hmc_num_leapfrog_steps"] is not None:
-        kernel_params["num_leapfrog_steps"] = args["hmc_num_leapfrog_steps"]
-
-    if args["hmc_mass"] is not None:
-        kernel_params["mass"] = args["hmc_mass"]
-
-    if args["nuts_max_delta_energy"] is not None:
-        kernel_params["max_delta_energy"] = args["nuts_max_delta_energy"]
-
-    return args["sampling_kernel"] or "hmc", kernel_params
-
-
 def init_training_ptt(
     args: dict,
     train_dataset: RBMDataset,
@@ -97,15 +67,6 @@ def init_training_ptt(
         device=args["device"],
         flags=flags,
 
-        hmc_step_size=args["hmc_step_size"],
-        hmc_step_size_target=args["hmc_step_size_target"],
-        hmc_step_size_rate=args["hmc_step_size_rate"],
-        hmc_step_size_warmup=args["hmc_step_size_warmup"],
-        hmc_num_leapfrog_steps=args["hmc_num_leapfrog_steps"],
-        hmc_mass=args["hmc_mass"],
-        sampling_kernel=args["sampling_kernel"],
-        nuts_max_delta_energy=args["nuts_max_delta_energy"],
-
         map_model=map_model,
         data_noise_std=args["data_noise_std"],
         data_std=args["data_std"]
@@ -141,29 +102,26 @@ def init_training_ptt(
     params = load_params(args["filename"], 1, args["device"], args["dtype"])
 
     # Create Sampler
-    sampler_kernel, sampler_kernel_params = get_sampler_kernel_args_ptt(args, params)
     list_model = [params, params.clone()]
     log_z_init = compute_partition_function_ais(1000, 5000, params)
     if args["model_type"] not in map_sampler.keys():
         args["model_type"] = "generic"
-    sampler = PTT(
-        list_model=list_model,
-        num_chains=args["num_chains"],
-        increment=args["increment"],
-        num_swaps=args["num_swaps"],
-        log_z_init=log_z_init,
-        target_acc_rate=args["target_acc_rate"],
-        max_n_model=args["max_n_model"],
-        target_n_model=args["target_n_model"],
-        full_sampler=args["full_sampler"],
-        reservoir_size=args["reservoir_size"],
-        n_sample_steps=args["n_sample_steps"],
-        device=args["device"],
-        dtype=args["dtype"],
-        sampler_kernel=sampler_kernel,
-        sampler_kernel_params=sampler_kernel_params,
-    )
-    sampler.init_annealing_chains(
+        sampler = PTT(
+            list_model=list_model,
+            num_chains=args["num_chains"],
+            increment=args["increment"],
+            num_swaps=args["num_swaps"],
+            log_z_init=log_z_init,
+            target_acc_rate=args["target_acc_rate"],
+            max_n_model=args["max_n_model"],
+            target_n_model=args["target_n_model"],
+            full_sampler=args["full_sampler"],
+            reservoir_size=args["reservoir_size"],
+            n_sample_steps=args["n_sample_steps"],
+            device=args["device"],
+            dtype=args["dtype"],
+        )
+        sampler.init_annealing_chains(
         num_chains=args["num_chains"],
         num_steps=args["num_steps_annealing"],
     )

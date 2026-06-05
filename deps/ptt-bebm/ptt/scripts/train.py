@@ -23,7 +23,6 @@ from rbms.training.implement import _restore_training
 from rbms.training.pcd import train
 from rbms.training.utils import get_checkpoints
 from rbms.utils import get_flagged_updates, get_saved_updates
-from ptt.training.utils import get_sampler_kernel_args_ptt
 
 from ptt.generic.classes import PTT, AcceptanceRateException
 from ptt.training.utils import init_training_ptt, reset_training
@@ -352,9 +351,6 @@ def main():
         dtype=args_torch["dtype"],
         map_model=map_model,
     )
-    sampler_kernel, sampler_kernel_params = get_sampler_kernel_args_ptt(args, params)
-    sampler.sampler_kernel = sampler_kernel
-    sampler.sampler_kernel_params = sampler_kernel_params
     while True:
         try:
             optimizer = setup_optim(args["optim"], args, params)

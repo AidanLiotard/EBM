@@ -106,8 +106,6 @@ def _sampling_step(
     chains: list[dict[str, Tensor]],
     pre_sampler: PreSampler | None,
     it_mcmc: int,
-    sampler_kernel: str | None = None,
-    sampler_kernel_params: dict | None = None,
 ) -> list[dict[str, Tensor]]:
     """Performs it_mcmc sampling steps with all the models.
 
@@ -125,8 +123,6 @@ def _sampling_step(
         chains[idx] = params.sample_state(
             chains=chains[idx],
             n_steps=it_mcmc,
-            kernel=sampler_kernel,
-            kernel_params=sampler_kernel_params or {},
         )
     if pre_sampler is not None:
         pre_sampler.sample(num_samples=n_chains)
@@ -148,8 +144,6 @@ def _ptt_sampling(
     show_acc_rate: bool = True,
     perform_swap: bool = True,
     index: Tensor | None = None,
-    sampler_kernel: str | None = None,
-    sampler_kernel_params: dict | None = None,
 ) -> tuple[list[dict[str, Tensor]], Tensor, Tensor | None]:
     if show_pbar:
         pbar = tqdm(total=it_mcmc, leave=False)
@@ -166,8 +160,6 @@ def _ptt_sampling(
         chains=chains,
         pre_sampler=pre_sampler,
         it_mcmc=increment,
-        sampler_kernel=sampler_kernel,
-        sampler_kernel_params=sampler_kernel_params,
     )
     if show_pbar:
         pbar.close()

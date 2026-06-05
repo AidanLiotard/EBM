@@ -91,7 +91,6 @@ def main(args, map_model=map_model):
             flags=flags,
             map_model=map_model,
             energy_type=args["energy_type"],
-            sampling_kernel=args["sampling_kernel"],
             data_noise_std=args["data_noise_std"],
             data_std=args["data_std"],
         )
@@ -138,35 +137,25 @@ def main(args, map_model=map_model):
 
     match args["training_type"]:
         case "pcd":
-            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
             sampler = PCD(
                 params=params,
                 chains=parallel_chains,
                 num_steps=args["gibbs_steps"],
                 beta=args["beta"],
-                kernel=sampler_kernel,
-                kernel_params=sampler_kernel_params,
-            )
+            )        
         case "cd":
-            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
             sampler = CD(
-                params=params,
-                num_steps=args["gibbs_steps"],
-                beta=args["beta"],
-                kernel=sampler_kernel,
-                kernel_params=sampler_kernel_params,
-            )
+            params=params,
+            num_steps=args["gibbs_steps"],
+            beta=args["beta"],
+        )
         case "rdm":
-            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
             sampler = RDM(
                 params=params,
                 num_chains=parallel_chains["visible"].shape[0],
                 num_steps=args["gibbs_steps"],
                 beta=args["beta"],
-                kernel=sampler_kernel,
-                kernel_params=sampler_kernel_params,
             )
-
         case _:
             raise ValueError(f"No training type {args['training_type']} supported.")
 
@@ -197,42 +186,6 @@ def load_args_from_filename(args: dict):
             args["gibbs_steps"] = sampling_args["gibbs_steps"][()].item()
         if args["beta"] is None:
             args["beta"] = sampling_args["beta"][()].item()
-        if args["hmc_step_size"] is None and "hmc_step_size" in sampling_args:
-            args["hmc_step_size"] = sampling_args["hmc_step_size"][()].item()
-        if (
-            args["hmc_step_size_target"] is None
-            and "hmc_step_size_target" in sampling_args
-        ):
-            args["hmc_step_size_target"] = sampling_args["hmc_step_size_target"][
-                ()
-            ].item()
-        if args["hmc_step_size_rate"] is None and "hmc_step_size_rate" in sampling_args:
-            args["hmc_step_size_rate"] = sampling_args["hmc_step_size_rate"][()].item()
-        if (
-            args["hmc_step_size_warmup"] is None
-            and "hmc_step_size_warmup" in sampling_args
-        ):
-            args["hmc_step_size_warmup"] = sampling_args["hmc_step_size_warmup"][
-                ()
-            ].item()
-        if (
-            args["hmc_num_leapfrog_steps"] is None
-            and "hmc_num_leapfrog_steps" in sampling_args
-        ):
-            args["hmc_num_leapfrog_steps"] = sampling_args[
-                "hmc_num_leapfrog_steps"
-            ][()].item()
-        if args["hmc_mass"] is None and "hmc_mass" in sampling_args:
-            args["hmc_mass"] = sampling_args["hmc_mass"][()].item()
-        if args["sampling_kernel"] is None and "sampling_kernel" in sampling_args:
-            args["sampling_kernel"] = str(sampling_args["sampling_kernel"][()].decode())
-        if (
-            args["nuts_max_delta_energy"] is None
-            and "nuts_max_delta_energy" in sampling_args
-        ):
-            args["nuts_max_delta_energy"] = sampling_args["nuts_max_delta_energy"][
-                ()
-            ].item()
         if args["optim"] is None:
             args["optim"] = str(f["train_args"]["optim"][()])
         if args["batch_size"] is None:
@@ -270,28 +223,6 @@ def load_args_from_filename(args: dict):
             args["data_std"] = f["train_args"]["data_std"][()].item()
 
     return args
-
-
-def get_sampler_kernel_args(args: dict, params) -> tuple[str | None, dict]:
-    if getattr(params, "name", None) != "CEBM":
-        return None, {}
-
-    kernel_params = {}
-    if args["hmc_step_size"] is not None:
-        kernel_params["step_size"] = args["hmc_step_size"]
-    if args["hmc_step_size_target"] is not None:
-        kernel_params["step_size_target"] = args["hmc_step_size_target"]
-    if args["hmc_step_size_rate"] is not None:
-        kernel_params["step_size_rate"] = args["hmc_step_size_rate"]
-    if args["hmc_step_size_warmup"] is not None:
-        kernel_params["step_size_warmup"] = args["hmc_step_size_warmup"]
-    if args["hmc_num_leapfrog_steps"] is not None:
-        kernel_params["num_leapfrog_steps"] = args["hmc_num_leapfrog_steps"]
-    if args["hmc_mass"] is not None:
-        kernel_params["mass"] = args["hmc_mass"]
-    if args["nuts_max_delta_energy"] is not None:
-        kernel_params["max_delta_energy"] = args["nuts_max_delta_energy"]
-    return (args["sampling_kernel"] or "hmc"), kernel_params
 
 
 def get_save_checkpoints(args: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
