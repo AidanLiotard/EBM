@@ -1,0 +1,107 @@
+import numpy as np
+import torch
+from torch import Tensor
+
+from rbms.classes import EBM, Sampler
+
+
+class RDM(Sampler):
+    def __init__(
+        self, params: EBM, num_chains: int, num_steps: int, beta: float = 1, **kwargs
+    ):
+        self.name = "RDM"
+        self.params = params
+        self.beta = beta
+        self.num_chains = num_chains
+        self.num_steps = num_steps
+        self.chains = self.params.init_chains(num_chains)
+        self.flags = []
+        self.kernel = kwargs.get("kernel", None)
+        self.kernel_params = kwargs.get("kernel_params", {})
+
+    def sample(self, num_steps: int | None, **kwargs):
+        kernel = kwargs.pop("kernel", self.kernel)
+        kernel_params = kwargs.pop("kernel_params", {})
+        kernel_params = {**self.kernel_params, **kernel_params, **kwargs}
+        self.chains = self.params.init_chains(num_samples=self.num_chains)
+        self.chains = self.params.sample_state(
+            chains=self.chains,
+            n_steps=num_steps,
+            beta=self.beta,
+            kernel=kernel,
+            kernel_params=kernel_params,
+        )
+        if "step_size" in self.chains:
+            self.kernel_params["step_size"] = float(
+                torch.as_tensor(self.chains["step_size"]).detach().cpu().item()
+            )
+        if "step_size_warmup" in self.chains:
+            self.kernel_params["step_size_warmup"] = int(
+                torch.as_tensor(self.chains["step_size_warmup"]).detach().cpu().item()
+            )
+
+    def get_conf_grad(self, batch: Tensor, **kwargs):
+        self.sample(num_steps=self.num_steps, **kwargs)
+        return self.chains
+
+    @torch.compiler.disable
+    def named_parameters(self):
+        params_dict = self.params.named_parameters()
+        params_dict["model_type"] = np.asarray(self.params.name, dtype="T")
+        params_dict["sampler_type"] = np.asarray(self.name, dtype="T")
+        params_dict["num_chains"] = np.asarray(self.num_chains)
+        params_dict["beta"] = np.asarray(self.beta)
+        params_dict["num_steps"] = np.asarray(self.num_steps)
+        match self.params.visible_type:
+            case "bernoulli":
+                chains_save = self.chains["visible"].bool().cpu().numpy()
+            case "ising" | "categorical":
+                chains_save = self.chains["visible"].to(torch.int16).cpu().numpy()
+            case _:
+                chains_save = self.chains["visible"].cpu().numpy()
+        params_dict["parallel_chains"] = chains_save
+        return params_dict
+
+    # Ajouter kernels dedans ???
+    @staticmethod
+    def set_named_parameters(
+        named_params: dict[str, np.ndarray],
+        map_model: dict[str, type[EBM]],
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ):
+        names = ["model_type", "num_chains", "beta", "num_steps"]
+        for k in names:
+            if k not in named_params.keys():
+                raise ValueError(
+                    f"""Dictionary params missing key '{k}'\n Provided keys : {named_params.keys()}\n Expected keys: {names}"""
+                )
+        model_type = str(named_params.pop("model_type"))
+        num_chains = int(named_params.pop("num_chains"))
+        beta = float(named_params.pop("beta"))
+        num_steps = int(named_params.pop("num_steps"))
+        chains_visible = torch.from_numpy(named_params.pop("parallel_chains")).to(
+            device=device, dtype=dtype
+        )
+        # There should only remain the keys for the model loading
+        params = map_model[model_type].set_named_parameters(
+            named_params=named_params, device=device, dtype=dtype
+        )
+        chains = params.init_chains(chains_visible.shape[0], start_v=chains_visible)
+        sampler = RDM(
+            params=params, num_chains=num_chains, num_steps=num_steps, beta=beta
+        )
+        sampler.chains = chains
+        return sampler
+
+    def post_grad_update(self, params: EBM):
+        self.params = params
+
+    def get_metrics_display(self, metrics, **kwargs):
+        return self.params.get_metrics(metrics)
+
+    def get_metrics_save(self):
+        return None
+
+    def pre_grad_update(self):
+        pass

@@ -1,0 +1,188 @@
+import argparse
+
+import h5py
+import torch
+from rbms import get_saved_updates
+from rbms.dataset import load_dataset
+from rbms.dataset.parser import add_args_dataset
+from rbms.map_model import map_model
+from rbms.optim import setup_optim
+from rbms.parser import (
+    add_args_init_rbm,
+    add_args_pytorch,
+    add_args_saves,
+    add_args_train,
+    add_grad_args,
+    add_sampling_args,
+    default_args,
+    match_args_dtype,
+    remove_argument,
+    set_args_default,
+)
+from rbms.sampler import CD, PCD, RDM
+from rbms.scripts.train_rbm import load_args_from_filename
+from rbms.training.implement import _init_training, _restore_training
+from rbms.training.pcd import train
+from rbms.training.utils import get_checkpoints
+
+from ptt.ais_traj import AISTraj
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Train a Restricted Boltzmann Machine")
+    parser = add_args_dataset(parser)
+    parser = add_args_init_rbm(parser)
+    parser = add_args_train(parser)
+    parser = add_sampling_args(parser)
+    parser = add_grad_args(parser)
+    parser = add_args_saves(parser)
+    parser = add_args_pytorch(parser)
+    remove_argument(parser, "use_torch")
+    return parser
+
+
+def main(args, map_model=map_model):
+    checkpoints = get_checkpoints(
+        num_updates=args["num_updates"],
+        n_save=args["n_save"],
+        spacing=args["spacing"],
+    )
+    train_dataset, test_dataset = load_dataset(
+        dataset_name=args["dataset"],
+        test_dataset_name=args["test_dataset"],
+        subset_labels=args["subset_labels"],
+        use_weights=args["use_weights"],
+        alphabet=args["alphabet"],
+        remove_duplicates=args["remove_duplicates"],
+        device=args["device"],
+        dtype=args["dtype"],
+    )
+    flags = ["checkpoint"]
+    if not args["restore"]:
+        args = set_args_default(args, default_args=default_args)
+        _init_training(
+            train_dataset=train_dataset,
+            seed=args["seed"],
+            train_size=args["train_size"],
+            test_size=1 - args["train_size"],
+            num_hiddens=args["num_hiddens"],
+            num_chains=args["num_chains"],
+            model_type=args["model_type"],
+            filename=args["filename"],
+            n_save=args["n_save"],
+            spacing=args["spacing"],
+            batch_size=args["batch_size"],
+            optim=args["optim"],
+            mult_optim=args["mult_optim"],
+            training_type=args["training_type"],
+            learning_rate=args["learning_rate"],
+            max_lr=args["max_lr"],
+            gibbs_steps=args["gibbs_steps"],
+            beta=args["beta"],
+            centered=not (args["no_center"]),
+            L1=args["L1"],
+            L2=args["L2"],
+            normalize_grad=args["normalize_grad"],
+            max_norm_grad=args["max_norm_grad"],
+            subset_labels=args["subset_labels"],
+            use_weights=args["use_weights"],
+            alphabet=args["alphabet"],
+            remove_duplicates=args["remove_duplicates"],
+            dtype=args["dtype"],
+            device=args["device"],
+            flags=flags,
+            map_model=map_model,
+        )
+        args["update"] = 1
+
+    args = load_args_from_filename(args)
+    print(args)
+    args = set_args_default(args, default_args)
+    if args["update"] is None:
+        args["update"] = get_saved_updates(args["filename"])[-1]
+    (
+        params,
+        parallel_chains,
+        target_update,
+        elapsed_time,
+        train_dataset,
+        test_dataset,
+    ) = _restore_training(
+        filename=args["filename"],
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        num_updates=args["num_updates"],
+        target_update=args["update"],
+        seed=args["seed"],
+        train_size=args["train_size"],
+        test_size=args["test_size"],
+        device=args["device"],
+        dtype=args["dtype"],
+        map_model=map_model,
+    )
+
+    optimizer = setup_optim(args["optim"], args, params)
+    from rbms.pre_grad import build_pre_grad_update
+
+    pre_grad_update = build_pre_grad_update(
+        optimizer=optimizer,
+        lambda_l1=args["L1"],
+        lambda_l2=args["L2"],
+        normalize_grad=args["normalize_grad"],
+        max_grad_norm=args["max_norm_grad"],
+    )
+
+    match args["training_type"]:
+        case "pcd":
+            sampler = PCD(
+                params=params,
+                chains=parallel_chains,
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+            )
+        case "cd":
+            sampler = CD(params=params, num_steps=args["gibbs_steps"], beta=args["beta"])
+        case "rdm":
+            sampler = RDM(
+                params=params,
+                num_chains=parallel_chains["visible"].shape[0],
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+            )
+        case "ais_traj":
+            sampler = AISTraj(
+                params=params,
+                chains=parallel_chains,
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+            )
+
+        case _:
+            raise ValueError(f"No training type {args['training_type']} supported.")
+
+    train(
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        params=params,
+        sampler=sampler,
+        optimizer=optimizer,
+        batch_size=args["batch_size"],
+        centered=not (args["no_center"]),
+        curr_update=args["update"],
+        pre_grad_update=pre_grad_update,
+        elapsed_time=elapsed_time,
+        checkpoints=checkpoints,
+        num_updates=args["num_updates"],
+        filename=args["filename"],
+    )
+
+
+if __name__ == "__main__":
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+    parser = create_parser()
+    args = parser.parse_args()
+    args = vars(args)
+    # args = set_args_default(args, default_args=default_args)
+    args = match_args_dtype(args)
+    main(args=args)

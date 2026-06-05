@@ -1,0 +1,329 @@
+import argparse
+
+import h5py
+import numpy as np
+import torch
+
+from rbms import get_saved_updates
+from rbms.dataset import load_dataset
+from rbms.dataset.parser import add_args_dataset
+from rbms.map_model import map_model
+from rbms.optim import setup_optim
+from rbms.parser import (
+    add_args_init_rbm,
+    add_args_pytorch,
+    add_args_saves,
+    add_args_train,
+    add_grad_args,
+    add_sampling_args,
+    default_args,
+    match_args_dtype,
+    remove_argument,
+    set_args_default,
+)
+from rbms.sampler import CD, PCD, RDM
+from rbms.training.implement import _init_training, _restore_training
+from rbms.training.pcd import train
+from rbms.training.utils import get_checkpoints
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Train a Restricted Boltzmann Machine")
+    parser = add_args_dataset(parser)
+    parser = add_args_init_rbm(parser)
+    parser = add_args_train(parser)
+    parser = add_sampling_args(parser)
+    parser = add_grad_args(parser)
+    parser = add_args_saves(parser)
+    parser = add_args_pytorch(parser)
+    remove_argument(parser, "use_torch")
+    return parser
+
+
+def main(args, map_model=map_model):
+    train_dataset, test_dataset = load_dataset(
+        dataset_name=args["dataset"],
+        test_dataset_name=args["test_dataset"],
+        subset_labels=args["subset_labels"],
+        use_weights=args["use_weights"],
+        alphabet=args["alphabet"],
+        remove_duplicates=args["remove_duplicates"],
+        device=args["device"],
+        dtype=args["dtype"],
+    )
+    flags = ["checkpoint", "checkpoint_model", "checkpoint_chain", "checkpoint_metric"]
+    if not args["restore"]:
+        args = set_args_default(args, default_args=default_args)
+        _init_training(
+            train_dataset=train_dataset,
+            seed=args["seed"],
+            train_size=args["train_size"],
+            test_size=1 - args["train_size"],
+            num_hiddens=args["num_hiddens"],
+            hidden_dims=args["hidden_dims"],
+            num_chains=args["num_chains"],
+            model_type=args["model_type"],
+            filename=args["filename"],
+            n_save=args["n_save"],
+            n_save_model=args["n_save_model"],
+            n_save_chain=args["n_save_chain"],
+            n_save_metric=args["n_save_metric"],
+            spacing=args["spacing"],
+            batch_size=args["batch_size"],
+            optim=args["optim"],
+            mult_optim=args["mult_optim"],
+            training_type=args["training_type"],
+            learning_rate=args["learning_rate"],
+            max_lr=args["max_lr"],
+            gibbs_steps=args["gibbs_steps"],
+            beta=args["beta"],
+            centered=not (args["no_center"]),
+            L1=args["L1"],
+            L2=args["L2"],
+            normalize_grad=args["normalize_grad"],
+            max_norm_grad=args["max_norm_grad"],
+            subset_labels=args["subset_labels"],
+            use_weights=args["use_weights"],
+            alphabet=args["alphabet"],
+            remove_duplicates=args["remove_duplicates"],
+            dtype=args["dtype"],
+            device=args["device"],
+            flags=flags,
+            map_model=map_model,
+            energy_type=args["energy_type"],
+            sampling_kernel=args["sampling_kernel"],
+            hmc_step_size=args["hmc_step_size"],
+            hmc_step_size_target=args["hmc_step_size_target"],
+            hmc_step_size_rate=args["hmc_step_size_rate"],
+            hmc_step_size_warmup=args["hmc_step_size_warmup"],
+            hmc_num_leapfrog_steps=args["hmc_num_leapfrog_steps"],
+            hmc_mass=args["hmc_mass"],
+            nuts_max_delta_energy=args["nuts_max_delta_energy"],
+            data_noise_std=args["data_noise_std"],
+            data_std=args["data_std"],
+        )
+        args["update"] = 1
+
+    args = load_args_from_filename(args)
+    print(args)
+    args = set_args_default(args, default_args)
+    if args["update"] is None:
+        args["update"] = get_saved_updates(args["filename"])[-1]
+    model_checkpoints, chain_checkpoints, metric_checkpoints = get_save_checkpoints(args)
+    (
+        params,
+        parallel_chains,
+        target_update,
+        elapsed_time,
+        train_dataset,
+        test_dataset,
+    ) = _restore_training(
+        filename=args["filename"],
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        num_updates=args["num_updates"],
+        target_update=args["update"],
+        seed=args["seed"],
+        train_size=args["train_size"],
+        test_size=args["test_size"],
+        device=args["device"],
+        dtype=args["dtype"],
+        map_model=map_model,
+    )
+    train_dataset.data_noise_std = float(args["data_noise_std"])
+    test_dataset.data_noise_std = float(args["data_noise_std"])
+    optimizer = setup_optim(args["optim"], args, params)
+    from rbms.pre_grad import build_pre_grad_update
+
+    pre_grad_update = build_pre_grad_update(
+        optimizer=optimizer,
+        lambda_l1=args["L1"],
+        lambda_l2=args["L2"],
+        normalize_grad=args["normalize_grad"],
+        max_grad_norm=args["max_norm_grad"],
+    )
+
+    match args["training_type"]:
+        case "pcd":
+            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
+            sampler = PCD(
+                params=params,
+                chains=parallel_chains,
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+                kernel=sampler_kernel,
+                kernel_params=sampler_kernel_params,
+            )
+        case "cd":
+            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
+            sampler = CD(
+                params=params,
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+                kernel=sampler_kernel,
+                kernel_params=sampler_kernel_params,
+            )
+        case "rdm":
+            sampler_kernel, sampler_kernel_params = get_sampler_kernel_args(args, params)
+            sampler = RDM(
+                params=params,
+                num_chains=parallel_chains["visible"].shape[0],
+                num_steps=args["gibbs_steps"],
+                beta=args["beta"],
+                kernel=sampler_kernel,
+                kernel_params=sampler_kernel_params,
+            )
+
+        case _:
+            raise ValueError(f"No training type {args['training_type']} supported.")
+
+    train(
+        train_dataset=train_dataset,
+        test_dataset=test_dataset,
+        params=params,
+        sampler=sampler,
+        optimizer=optimizer,
+        batch_size=args["batch_size"],
+        centered=not (args["no_center"]),
+        curr_update=args["update"],
+        pre_grad_update=pre_grad_update,
+        elapsed_time=elapsed_time,
+        model_checkpoints=model_checkpoints,
+        chain_checkpoints=chain_checkpoints,
+        metric_checkpoints=metric_checkpoints,
+        num_updates=args["num_updates"],
+        filename=args["filename"],
+    )
+
+
+def load_args_from_filename(args: dict):
+    with h5py.File(args["filename"], "r") as f:
+        sampling_args = f["sampling_args"]
+        hyperparameters = f["hyperparameters"]
+        if args["gibbs_steps"] is None:
+            args["gibbs_steps"] = sampling_args["gibbs_steps"][()].item()
+        if args["beta"] is None:
+            args["beta"] = sampling_args["beta"][()].item()
+        if args["hmc_step_size"] is None and "hmc_step_size" in sampling_args:
+            args["hmc_step_size"] = sampling_args["hmc_step_size"][()].item()
+        if (
+            args["hmc_step_size_target"] is None
+            and "hmc_step_size_target" in sampling_args
+        ):
+            args["hmc_step_size_target"] = sampling_args["hmc_step_size_target"][
+                ()
+            ].item()
+        if args["hmc_step_size_rate"] is None and "hmc_step_size_rate" in sampling_args:
+            args["hmc_step_size_rate"] = sampling_args["hmc_step_size_rate"][()].item()
+        if (
+            args["hmc_step_size_warmup"] is None
+            and "hmc_step_size_warmup" in sampling_args
+        ):
+            args["hmc_step_size_warmup"] = sampling_args["hmc_step_size_warmup"][
+                ()
+            ].item()
+        if (
+            args["hmc_num_leapfrog_steps"] is None
+            and "hmc_num_leapfrog_steps" in sampling_args
+        ):
+            args["hmc_num_leapfrog_steps"] = sampling_args[
+                "hmc_num_leapfrog_steps"
+            ][()].item()
+        if args["hmc_mass"] is None and "hmc_mass" in sampling_args:
+            args["hmc_mass"] = sampling_args["hmc_mass"][()].item()
+        if args["sampling_kernel"] is None and "sampling_kernel" in sampling_args:
+            args["sampling_kernel"] = str(sampling_args["sampling_kernel"][()].decode())
+        if (
+            args["nuts_max_delta_energy"] is None
+            and "nuts_max_delta_energy" in sampling_args
+        ):
+            args["nuts_max_delta_energy"] = sampling_args["nuts_max_delta_energy"][
+                ()
+            ].item()
+        if args["optim"] is None:
+            args["optim"] = str(f["train_args"]["optim"][()])
+        if args["batch_size"] is None:
+            args["batch_size"] = f["train_args"]["batch_size"][()].item()
+        if args["training_type"] is None:
+            args["training_type"] = str(f["train_args"]["training_type"][()].decode())
+        args["no_center"] = f["grad_args"]["no_center"][()].item()
+        args["seed"] = f["dataset_args"]["seed"][()].item()
+        args["train_size"] = f["dataset_args"]["train_size"][()].item()
+        args["test_size"] = f["dataset_args"]["test_size"][()].item()
+        if args["L1"] is None:
+            args["L1"] = f["grad_args"]["L1"][()].item()
+        if args["L2"] is None:
+            args["L2"] = f["grad_args"]["L2"][()].item()
+        if args["normalize_grad"] is None:
+            args["normalize_grad"] = f["grad_args"]["normalize_grad"][()].item()
+        if args["max_norm_grad"] is None:
+            args["max_norm_grad"] = f["grad_args"]["max_norm_grad"][()].item()
+        save_args = f["save_args"]
+        if args["n_save_model"] is None and "n_save_model" in save_args:
+            args["n_save_model"] = save_args["n_save_model"][()].item()
+        if args["n_save_chain"] is None and "n_save_chain" in save_args:
+            args["n_save_chain"] = save_args["n_save_chain"][()].item()
+        if args["n_save_metric"] is None and "n_save_metric" in save_args:
+            args["n_save_metric"] = save_args["n_save_metric"][()].item()
+        if args["n_save_model"] is None and "n_save" in save_args:
+            args["n_save_model"] = save_args["n_save"][()].item()
+        if args["n_save_chain"] is None and "n_save" in save_args:
+            args["n_save_chain"] = save_args["n_save"][()].item()
+        if args["n_save_metric"] is None and "n_save" in save_args:
+            args["n_save_metric"] = save_args["n_save"][()].item()
+        if args["data_noise_std"] is None and "data_noise_std" in f["train_args"]:
+            args["data_noise_std"] = f["train_args"]["data_noise_std"][()].item()
+        if args["data_std"] is None and "data_std" in f["train_args"]:
+            args["data_std"] = f["train_args"]["data_std"][()].item()
+
+    return args
+
+
+def get_sampler_kernel_args(args: dict, params) -> tuple[str | None, dict]:
+    if getattr(params, "name", None) != "CEBM":
+        return None, {}
+
+    kernel_params = {}
+    if args["hmc_step_size"] is not None:
+        kernel_params["step_size"] = args["hmc_step_size"]
+    if args["hmc_step_size_target"] is not None:
+        kernel_params["step_size_target"] = args["hmc_step_size_target"]
+    if args["hmc_step_size_rate"] is not None:
+        kernel_params["step_size_rate"] = args["hmc_step_size_rate"]
+    if args["hmc_step_size_warmup"] is not None:
+        kernel_params["step_size_warmup"] = args["hmc_step_size_warmup"]
+    if args["hmc_num_leapfrog_steps"] is not None:
+        kernel_params["num_leapfrog_steps"] = args["hmc_num_leapfrog_steps"]
+    if args["hmc_mass"] is not None:
+        kernel_params["mass"] = args["hmc_mass"]
+    if args["nuts_max_delta_energy"] is not None:
+        kernel_params["max_delta_energy"] = args["nuts_max_delta_energy"]
+    return (args["sampling_kernel"] or "hmc"), kernel_params
+
+
+def get_save_checkpoints(args: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n_save_model = args.get("n_save_model")
+    n_save_chain = args.get("n_save_chain")
+    n_save_metric = args.get("n_save_metric")
+    if n_save_model is None:
+        n_save_model = args["n_save"]
+    if n_save_chain is None:
+        n_save_chain = args["n_save"]
+    if n_save_metric is None:
+        n_save_metric = args["n_save"]
+    return (
+        get_checkpoints(args["num_updates"], n_save_model, args["spacing"]),
+        get_checkpoints(args["num_updates"], n_save_chain, args["spacing"]),
+        get_checkpoints(args["num_updates"], n_save_metric, args["spacing"]),
+    )
+
+
+if __name__ == "__main__":
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+    parser = create_parser()
+    args = parser.parse_args()
+    args = vars(args)
+    # args = set_args_default(args, default_args=default_args)
+    args = match_args_dtype(args)
+    main(args=args)

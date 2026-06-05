@@ -1,0 +1,372 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Self
+
+import numpy as np
+import torch
+from torch import Tensor
+
+from rbms.dataset.dataset_class import RBMDataset
+
+
+class EBM(ABC):
+    """An abstract class representing the parameters of an Energy-Based Model."""
+
+    name: str
+    device: torch.device | str | None
+    visible_type: str
+    flags: list[str]
+
+    @abstractmethod
+    def __init__(self): ...
+
+    @abstractmethod
+    def __add__(self, other: EBM) -> EBM:
+        """Add the parameters of two EBMs. Useful for interpolation"""
+        ...
+
+    @abstractmethod
+    def __mul__(self, other: float) -> EBM:
+        """Multiplies the parameters of the EBM by a float."""
+        ...
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, EBM):
+            return False
+        other_params = other.named_parameters()
+        for k, v in self.named_parameters().items():
+            if not np.equal(other_params[k], v).all():
+                return False
+        return True
+
+    @abstractmethod
+    def compute_energy_visibles(self, v: Tensor) -> Tensor:
+        """Returns the marginalized energy of the model computed on the visible configurations
+
+        Args:
+            v (Tensor): Visible configurations
+
+        Returns:
+            Tensor: The computed energy.
+        """
+        ...
+
+    @abstractmethod
+    def init_chains(
+        self,
+        num_samples: int,
+        weights: Tensor | None = None,
+        start_v: Tensor | None = None,
+    ) -> dict[str, Tensor]:
+        """Initialize a Markov chain for the EBM by sampling a uniform distribution on the visible layer
+        and sampling the hidden layer according to the visible one.
+
+        Args:
+            num_samples (int): The number of samples to initialize.
+            start_v (Tensor, optional): The initial visible states. Defaults to None.
+
+        Returns:
+            dict[str, Tensor]: The initialized Markov chain.
+
+        Notes:
+            - If start_v is specified, its number of samples will override the num_samples argument.
+        """
+        ...
+
+    @abstractmethod
+    def compute_gradient(
+        self,
+        data: dict[str, Tensor],
+        chains: dict[str, Tensor],
+        centered: bool = True,
+    ) -> None:
+        """Compute the gradient for each of the parameters and attach it.
+
+        Args:
+            data (dict[str, Tensor]): The data state.
+            chains (dict[str, Tensor]): The parallel chains used for gradient computation.
+            centered (bool, optional): Whether to use centered gradients. Defaults to True.
+            lambda_l1 (float, optional): factor for the L1 regularization. Defaults to 0.
+            lambda_l2 (float, optional): factor for the L2 regularization. Defaults to 0.
+        """
+        ...
+
+    @abstractmethod
+    def parameters(self) -> list[Tensor]:
+        """Returns a list containing the parameters of the RBM.
+
+        Returns:
+            List[Tensor]: A list containing the weight matrix, visible bias, and hidden bias.
+        """
+        ...
+
+    @abstractmethod
+    def named_parameters(self) -> dict[str, np.ndarray]: ...
+
+    @staticmethod
+    @abstractmethod
+    def set_named_parameters(
+        named_params: dict[str, np.ndarray],
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> EBM: ...
+
+    @abstractmethod
+    def to(
+        self,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> Self:
+        """Move the parameters to the specified device and/or convert them to the specified data type.
+
+        Args:
+            device (Optional[torch.device], optional): The device to move the parameters to.
+                Defaults to None.
+            dtype (Optional[torch.dtype], optional): The data type to convert the parameters to.
+                Defaults to None.
+
+        Returns:
+            RBM: The modified RBM instance.
+        """
+        ...
+
+    @abstractmethod
+    def clone(
+        self, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ) -> EBM:
+        """Create a clone of the RBM instance.
+
+        Args:
+            device (Optional[torch.device], optional): The device for the cloned parameters.
+                Defaults to the current device.
+            dtype (Optional[torch.dtype], optional): The data type for the cloned parameters.
+                Defaults to the current data type.
+
+        Returns:
+            RBM: A new RBM instance with cloned parameters.
+        """
+        ...
+
+    @staticmethod
+    @abstractmethod
+    def init_parameters(
+        num_visibles: int,
+        dataset: RBMDataset,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        var_init: float = 1e-4,
+    ) -> EBM:
+        """Initialize the parameters of the RBM.
+
+        Args:
+            num_visibles (int): The number of visible units.
+            dataset (RBMDataset): Training dataset.
+            device (torch.device): PyTorch device for the parameters.
+            dtype (torch.dtype): PyTorch dtype for the parameters.
+            var_init (float, optional): Variance of the weight matrix. Defaults to 1e-4.
+
+        Notes:
+            - The number of visible units is induced from the dataset provided.
+            - Hidden biases are set to 0.
+            - Visible biases are set to the frequencies of the dataset.
+            - The weight matrix is initialized with a Gaussian distribution of variance `var_init`.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def num_visibles(self) -> int:
+        """Number of visible units"""
+        ...
+
+    @property
+    @abstractmethod
+    def ref_log_z(self) -> float:
+        """Reference log partition function with weights set to 0 (except for the visible bias)."""
+        ...
+
+    @abstractmethod
+    def independent_model(self) -> EBM:
+        """Independent model where only local fields are preserved."""
+
+    @abstractmethod
+    def sample_state(
+        self, chains: dict[str, Tensor], n_steps: int, beta: float = 1.0, **kwargs
+    ) -> dict[str, Tensor]:
+        """Sample the model for n_steps
+
+        Args:
+            chains (): The starting position of the chains.
+            n_steps (int): The number of sampling steps.
+            beta (float, optional): The inverse temperature. Defaults to 1.0
+
+        Returns:
+            dict[str, Tensor]: The updated chains after n_steps of sampling.
+        """
+        ...
+
+    def init_grad(self) -> None:
+        for p in self.parameters():
+            p.grad = torch.zeros_like(p)
+
+    def normalize_grad(self) -> None:
+        norm_grad = torch.sqrt(
+            torch.sum(torch.tensor([p.grad.square().sum() for p in self.parameters()]))
+        )
+        for p in self.parameters():
+            p.grad /= norm_grad
+        # for p in self.parameters():
+        #     p.grad /= p.grad.norm()
+
+    def clip_grad(self, max_norm=5):
+        for p in self.parameters():
+            if p.grad is not None:
+                grad_norm = p.grad.norm()
+                if grad_norm > max_norm:
+                    p.grad /= grad_norm
+                    p.grad *= max_norm
+
+    def save_flags(self, flags: list[str]) -> list[str]:
+        if len(self.flags) > 0:
+            for elt in self.flags:
+                flags.append(elt)
+        self.flags = []
+        return flags
+
+    @abstractmethod
+    def get_metrics(self, metrics: dict[str, float]) -> dict[str, float]: ...
+
+    @abstractmethod
+    def pre_grad_update(self) -> None: ...
+
+    @abstractmethod
+    def post_grad_update(self) -> None: ...
+
+    @property
+    @abstractmethod
+    def effective_number_variables(self) -> float: ...
+
+
+class RBM(EBM):
+    """An abstract class representing the parameters of a RBM."""
+
+    @abstractmethod
+    def sample_hiddens(
+        self, chains: dict[str, Tensor], beta: float = 1.0
+    ) -> dict[str, Tensor]:
+        """Sample the hidden layer conditionally to the visible one.
+
+        Args:
+            chains (dict[str, Tensor]): The parallel chains used for sampling.
+            beta (float, optional): The inverse temperature. Defaults to 1.0.
+
+        Returns:
+            dict[str, Tensor]: The updated chains with sampled hidden states.
+        """
+        ...
+
+    @abstractmethod
+    def compute_energy(self, v: Tensor, h: Tensor) -> Tensor:
+        """Compute the energy of the RBM on the visible and hidden variables.
+
+        Args:
+            v (Tensor): Visible configurations.
+            h (Tensor): Hidden configurations.
+
+        Returns:
+            Tensor: The computed energy.
+        """
+        ...
+
+    @abstractmethod
+    def compute_energy_hiddens(self, h: Tensor) -> Tensor:
+        """Returns the marginalized energy of the model computed on hidden configurations
+
+        Args:
+            h (Tensor): The computed energy
+        """
+        ...
+
+    @abstractmethod
+    def sample_visibles(
+        self, chains: dict[str, Tensor], beta: float = 1.0
+    ) -> dict[str, Tensor]:
+        """Sample the visible layer conditionally to the hidden one.
+
+        Args:
+            chains (dict[str, Tensor]): The parallel chains used for sampling.
+            beta (float, optional): The inverse temperature. Defaults to 1.0.
+
+        Returns:
+            dict[str, Tensor]: The updated chains with sampled visible states.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def num_hiddens(self) -> int:
+        """Number of hidden units"""
+        ...
+
+    def sample_state(self, chains, n_steps, beta=1.0, **kwargs):
+        new_chains = {
+            "visible": chains["visible"].clone(),
+            "weights": chains["weights"].clone(),
+        }
+        for _ in range(n_steps):
+            new_chains = self.sample_hiddens(chains=new_chains, beta=beta)
+            new_chains = self.sample_visibles(chains=new_chains, beta=beta)
+        new_chains = self.sample_hiddens(chains=new_chains, beta=beta)
+        return new_chains
+
+    @property
+    def effective_number_variables(self) -> float:
+        return np.sqrt(self.num_visibles * self.num_hiddens)
+
+
+class Sampler(ABC):
+    name: str
+    flags: list[str]
+
+    @abstractmethod
+    def __init__(self): ...
+
+    @abstractmethod
+    def get_conf_grad(self, batch: Tensor, **kwargs) -> dict[str, Tensor]: ...
+
+    @abstractmethod
+    def sample(self, num_steps: int | None, **kwargs) -> None: ...
+
+    def save_flags(self, flags: list[str]) -> list[str]:
+        if len(self.flags) > 0:
+            for elt in self.flags:
+                flags.append(elt)
+        self.flags = []
+        return flags
+
+    @abstractmethod
+    def named_parameters(self) -> dict[str, np.ndarray]: ...
+
+    @staticmethod
+    @abstractmethod
+    def set_named_parameters(
+        named_params: dict[str, np.ndarray],
+        map_model: dict[str, type[EBM]],
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> Sampler: ...
+
+    @abstractmethod
+    def pre_grad_update(self) -> None: ...
+
+    @abstractmethod
+    def post_grad_update(self, params: EBM) -> None: ...
+
+    @abstractmethod
+    def get_metrics_display(
+        self, metrics: dict[str, float], **kwargs
+    ) -> dict[str, float]: ...
+
+    @abstractmethod
+    def get_metrics_save(self) -> dict[str, np.ndarray] | None: ...
