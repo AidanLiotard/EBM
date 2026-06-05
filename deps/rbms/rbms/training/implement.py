@@ -52,14 +52,6 @@ def _init_training(
     dtype: torch.dtype,
     device: torch.device | str,
     flags: list[str],
-    hmc_step_size: float | None = None,
-    hmc_step_size_target: float | None = None,
-    hmc_step_size_rate: float | None = None,
-    hmc_step_size_warmup: int | None = None,
-    hmc_num_leapfrog_steps: int | None = None,
-    hmc_mass: float | None = None,
-    sampling_kernel: str | None = None,
-    nuts_max_delta_energy: float | None = None,
     map_model: dict[str, type[EBM]] = map_model,
     data_noise_std: float = 3e-2,
     data_std: float = 1.0,
@@ -143,35 +135,19 @@ def _init_training(
             dtype=dtype,
         )
 
-    sampler_kernel = None
-    sampler_kernel_params = {}
-    if model_type == "CEBM":
-        sampler_kernel = "hmc" if sampling_kernel is None else sampling_kernel
-        if hmc_step_size is not None:
-            sampler_kernel_params["step_size"] = hmc_step_size
-        if hmc_step_size_target is not None:
-            sampler_kernel_params["step_size_target"] = hmc_step_size_target
-        if hmc_step_size_rate is not None:
-            sampler_kernel_params["step_size_rate"] = hmc_step_size_rate
-        if hmc_step_size_warmup is not None:
-            sampler_kernel_params["step_size_warmup"] = hmc_step_size_warmup
-        if hmc_num_leapfrog_steps is not None:
-            sampler_kernel_params["num_leapfrog_steps"] = hmc_num_leapfrog_steps
-        if hmc_mass is not None:
-            sampler_kernel_params["mass"] = hmc_mass
-        if nuts_max_delta_energy is not None:
-            sampler_kernel_params["max_delta_energy"] = nuts_max_delta_energy
-
     # Permanent chains
     parallel_chains = params.init_chains(num_samples=num_chains)
-    if sampler_kernel is None:
-        parallel_chains = params.sample_state(chains=parallel_chains, n_steps=gibbs_steps)
+
+    if model_type == "CEBM":
+        parallel_chains = params.sample_state(
+            chains=parallel_chains,
+            n_steps=gibbs_steps,
+            kernel="hmc",
+        )
     else:
         parallel_chains = params.sample_state(
             chains=parallel_chains,
             n_steps=gibbs_steps,
-            kernel=sampler_kernel,
-            kernel_params=sampler_kernel_params,
         )
 
     # Save hyperparameters
@@ -220,22 +196,9 @@ def _init_training(
         sampling = f.create_group("sampling_args")
         sampling["gibbs_steps"] = gibbs_steps
         sampling["beta"] = beta
-        if hmc_step_size is not None:
-            sampling["hmc_step_size"] = hmc_step_size
-        if hmc_step_size_target is not None:
-            sampling["hmc_step_size_target"] = hmc_step_size_target
-        if hmc_step_size_rate is not None:
-            sampling["hmc_step_size_rate"] = hmc_step_size_rate
-        if hmc_step_size_warmup is not None:
-            sampling["hmc_step_size_warmup"] = hmc_step_size_warmup
-        if hmc_num_leapfrog_steps is not None:
-            sampling["hmc_num_leapfrog_steps"] = hmc_num_leapfrog_steps
-        if hmc_mass is not None:
-            sampling["hmc_mass"] = hmc_mass
-        if sampling_kernel is not None:
-            sampling["sampling_kernel"] = np.asarray(sampling_kernel, dtype="T")
-        if nuts_max_delta_energy is not None:
-            sampling["nuts_max_delta_energy"] = nuts_max_delta_energy
+
+        if model_type == "CEBM":
+            sampling["sampling_kernel"] = np.asarray("hmc", dtype="T")
 
         train_args = f.create_group("train_args")
         train_args["optim"] = np.asarray(optim, dtype="T")

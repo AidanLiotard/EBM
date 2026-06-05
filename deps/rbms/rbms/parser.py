@@ -149,68 +149,6 @@ def add_sampling_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
         type=float,
         help="(Defaults to 1.0). The inverse temperature of the RBM",
     )
-    sampling_args.add_argument(
-        "--sampling_kernel",
-        type=str,
-        default=None,
-        choices=["hmc"],
-        help="Sampling kernel for continuous EBMs. If omitted, defaults to HMC.",
-    )
-    sampling_args.add_argument(
-        "--hmc_step_size",
-        type=float,
-        default=None,
-        help="Step size for continuous EBM samplers. If omitted, uses the sampler default.",
-    )
-    sampling_args.add_argument(
-        "--hmc_step_size_target",
-        type=float,
-        default=None,
-        help=(
-            "Target acceptance rate for optional HMC step-size warmup adaptation. "
-            "Used together with --hmc_step_size_rate."
-        ),
-    )
-    sampling_args.add_argument(
-        "--hmc_step_size_rate",
-        type=float,
-        default=None,
-        help=(
-            "Learning rate for optional HMC step-size warmup adaptation. "
-            "Used together with --hmc_step_size_target."
-        ),
-    )
-    sampling_args.add_argument(
-        "--hmc_step_size_warmup",
-        type=int,
-        default=None,
-        help=(
-            "Number of initial HMC transitions used for step-size adaptation. "
-            "After this warmup, the sampler keeps the adapted step size fixed."
-        ),
-    )
-    sampling_args.add_argument(
-        "--hmc_num_leapfrog_steps",
-        type=int,
-        default=None,
-        help=(
-            "Leapfrog steps for HMC, or approximate maximum depth for NUTS. "
-            "If omitted, uses the sampler default."
-        ),
-    )
-    sampling_args.add_argument(
-        "--hmc_mass",
-        type=float,
-        default=None,
-        help="Mass for continuous EBM samplers. If omitted, uses the sampler default.",
-    )
-    sampling_args.add_argument(
-        "--nuts_max_delta_energy",
-        type=float,
-        default=None,
-        help="Divergence threshold for NUTS. If omitted, uses the sampler default.",
-    )
-    return parser
 
 
 def add_grad_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -390,14 +328,7 @@ default_args: dict[str, Any] = {
     "num_chains": 2000,
     "num_updates": 10000,
     "beta": 1.0,
-    "hmc_step_size": None,
-    "hmc_step_size_target": None,
-    "hmc_step_size_rate": None,
-    "hmc_step_size_warmup": None,
-    "hmc_num_leapfrog_steps": None,
-    "hmc_mass": None,
     "sampling_kernel": None,
-    "nuts_max_delta_energy": None,
     "restore": False,
     "seed": np.random.randint(0, 1000000000000),
     "no_center": False,

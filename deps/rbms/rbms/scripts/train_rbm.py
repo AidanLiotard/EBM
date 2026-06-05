@@ -92,13 +92,6 @@ def main(args, map_model=map_model):
             map_model=map_model,
             energy_type=args["energy_type"],
             sampling_kernel=args["sampling_kernel"],
-            hmc_step_size=args["hmc_step_size"],
-            hmc_step_size_target=args["hmc_step_size_target"],
-            hmc_step_size_rate=args["hmc_step_size_rate"],
-            hmc_step_size_warmup=args["hmc_step_size_warmup"],
-            hmc_num_leapfrog_steps=args["hmc_num_leapfrog_steps"],
-            hmc_mass=args["hmc_mass"],
-            nuts_max_delta_energy=args["nuts_max_delta_energy"],
             data_noise_std=args["data_noise_std"],
             data_std=args["data_std"],
         )
