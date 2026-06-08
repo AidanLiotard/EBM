@@ -121,7 +121,7 @@ def _sample_state_hmc_adapt(
     target_acceptance: float = 0.65,
     adapt_step_size: bool = True,
     adapt_rate: float = 0.05,
-    min_step_size: float = 1e-5,
+    min_step_size: float = 1e-10,
     max_step_size: float = 0.2,
     step_size_target: float | None = None,
     step_size_rate: float | None = None,

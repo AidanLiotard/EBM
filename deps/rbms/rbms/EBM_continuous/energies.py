@@ -309,15 +309,25 @@ class CNNEnergy(torch.nn.Module):
             dtype=dtype,
         ).flatten()
 
-        visible_field = torch.zeros(
-            self.num_visibles,
-            device=device,
-            dtype=dtype,
-        )
+        if visible_field is None:
+            visible_field = torch.zeros(
+                self.num_visibles,
+                device=device,
+                dtype=dtype,
+            )
+        else:
+            visible_field = torch.as_tensor(
+                visible_field,
+                device=device,
+                dtype=dtype,
+            ).flatten()
 
         self.register_buffer("data_mean", data_mean)
         self.register_buffer("data_std", data_std)
-        self.register_buffer("visible_field", visible_field)
+        self.visible_field = torch.nn.Parameter(
+            visible_field.clone(),
+            requires_grad=False,
+        )
 
         # LeNet-style residual energy network:
         # 1x28x28 -> 6x24x24 -> 6x12x12 -> 16x8x8 -> 16x4x4
@@ -344,6 +354,12 @@ class CNNEnergy(torch.nn.Module):
         self.net.requires_grad_(False)
         self._init_weights()
 
+    @property
+    def visible_std(self) -> Tensor:
+        return self.data_std
+
+    @property
+    def ref_log_z(self) -> Tensor:
         log_two_pi = torch.log(
             torch.as_tensor(
                 2.0 * torch.pi,
@@ -361,11 +377,7 @@ class CNNEnergy(torch.nn.Module):
             self.data_std * self.visible_field
         ).square().sum()
 
-        self.register_buffer("ref_log_z", log_z_gauss + field_shift)
-
-    @property
-    def visible_std(self) -> Tensor:
-        return self.data_std
+        return log_z_gauss + field_shift
 
     def _init_weights(self) -> None:
         for module in self.net.modules():
@@ -656,7 +668,9 @@ def restore_energy(
     device: torch.device | str,
     dtype: torch.dtype,
 ) -> torch.nn.Module:
+    named_params = dict(named_params)
     energy_type = identify_energy_type(named_params)
+    named_params.pop("ref_log_z", None)
 
     match energy_type:
         case "mlp":
