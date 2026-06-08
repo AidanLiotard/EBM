@@ -90,9 +90,12 @@ def train(
             flags.append("checkpoint")
 
         if len(flags) > 0:
-            names_params = (
-                list(params.named_parameters().keys()) if len(optimizer) > 1 else ["all"]
-            )
+            if len(optimizer) > 1 and hasattr(params, "energy"):
+                names_params = [name for name, _ in params.energy.named_parameters()]
+            elif len(optimizer) > 1:
+                names_params = list(params.named_parameters().keys())
+            else:
+                names_params = ["all"]
             learning_rates = np.asarray([opt.param_groups[0]["lr"] for opt in optimizer])
 
             metrics = {}

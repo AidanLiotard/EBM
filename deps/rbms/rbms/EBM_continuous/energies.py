@@ -380,18 +380,30 @@ class CNNEnergy(torch.nn.Module):
         return log_z_gauss + field_shift
 
     def _init_weights(self) -> None:
+        hidden_gain = 0.5
+        final_gain = 0.01
+
+        linear_layers = []
+
         for module in self.net.modules():
             if isinstance(module, torch.nn.Conv2d):
-                torch.nn.init.xavier_uniform_(module.weight, gain=0.5)
+                torch.nn.init.xavier_uniform_(module.weight, gain=hidden_gain)
 
                 if module.bias is not None:
                     torch.nn.init.zeros_(module.bias)
 
             elif isinstance(module, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(module.weight, gain=0.5)
+                linear_layers.append(module)
+                torch.nn.init.xavier_uniform_(module.weight, gain=hidden_gain)
 
                 if module.bias is not None:
                     torch.nn.init.zeros_(module.bias)
+
+        final_layer = linear_layers[-1]
+        torch.nn.init.xavier_uniform_(final_layer.weight, gain=final_gain)
+
+        if final_layer.bias is not None:
+            torch.nn.init.zeros_(final_layer.bias)
 
     def E_visible_gaussian(self, v: Tensor) -> Tensor:
         z = (v - self.data_mean.view(1, -1)) / self.data_std.view(1, -1)

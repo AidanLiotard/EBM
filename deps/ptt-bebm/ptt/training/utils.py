@@ -104,24 +104,23 @@ def init_training_ptt(
     # Create Sampler
     list_model = [params, params.clone()]
     log_z_init = compute_partition_function_ais(1000, 5000, params)
-    if args["model_type"] not in map_sampler.keys():
-        args["model_type"] = "generic"
-        sampler = PTT(
-            list_model=list_model,
-            num_chains=args["num_chains"],
-            increment=args["increment"],
-            num_swaps=args["num_swaps"],
-            log_z_init=log_z_init,
-            target_acc_rate=args["target_acc_rate"],
-            max_n_model=args["max_n_model"],
-            target_n_model=args["target_n_model"],
-            full_sampler=args["full_sampler"],
-            reservoir_size=args["reservoir_size"],
-            n_sample_steps=args["n_sample_steps"],
-            device=args["device"],
-            dtype=args["dtype"],
-        )
-        sampler.init_annealing_chains(
+    sampler_class = map_sampler.get(args["model_type"], PTT)
+    sampler = sampler_class(
+        list_model=list_model,
+        num_chains=args["num_chains"],
+        increment=args["increment"],
+        num_swaps=args["num_swaps"],
+        log_z_init=log_z_init,
+        target_acc_rate=args["target_acc_rate"],
+        max_n_model=args["max_n_model"],
+        target_n_model=args["target_n_model"],
+        full_sampler=args["full_sampler"],
+        reservoir_size=args["reservoir_size"],
+        n_sample_steps=args["n_sample_steps"],
+        device=args["device"],
+        dtype=args["dtype"],
+    )
+    sampler.init_annealing_chains(
         num_chains=args["num_chains"],
         num_steps=args["num_steps_annealing"],
     )

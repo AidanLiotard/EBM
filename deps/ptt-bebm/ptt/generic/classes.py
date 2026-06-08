@@ -240,7 +240,6 @@ class PTT(Sampler):
             sampler_archive: Group = f["sampler"]
             for k in sampler_archive.keys():
                 named_params[k] = np.asarray(sampler_archive[k])
-            print(named_params)
         return PTT.set_named_parameters(
             named_params=named_params, map_model=map_model, device=device, dtype=dtype
         )
