@@ -84,10 +84,5 @@ def load_dataset(
             print("    Done")
         else:
             return_datasets.append(None)
-    if variable_type == "continuous":
-        tmp_std = return_datasets[0].data.std(dim=0)
-        return_datasets[0].data/= tmp_std.clamp(min=1e-2)
-        if return_datasets[1] is not None:
-            return_datasets[1].data/= tmp_std.clamp(min=1e-2)
     
     return tuple(return_datasets)
