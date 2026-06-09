@@ -328,7 +328,7 @@ class CEBM(EBM):
         step_size = (
             float(self.last_step_size.detach().cpu())
             if self.last_step_size is not None
-            else 1e-2
+            else 1e-0
         )
 
         sampled_chains, info = sample_state_impl(
@@ -346,8 +346,8 @@ class CEBM(EBM):
             target_acceptance=0.65,
             adapt_step_size=True,
             adapt_rate=0.05,
-            min_step_size=1e-5,
-            max_step_size=0.2,
+            min_step_size=1e-7,
+            max_step_size=5.0,
         )
 
         self.last_acceptance = info.get("acceptance")

@@ -380,7 +380,7 @@ class CNNEnergy(torch.nn.Module):
         return log_z_gauss + field_shift
 
     def _init_weights(self) -> None:
-        hidden_gain = 0.5
+        hidden_gain = 0.1
         final_gain = 0.01
 
         linear_layers = []
