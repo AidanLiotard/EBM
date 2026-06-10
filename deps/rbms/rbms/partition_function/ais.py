@@ -52,6 +52,13 @@ def compute_partition_function_ais(num_chains: int, num_beta: int, params: EBM) 
     Returns:
         float: The computed log partition function.
     """
+    if getattr(params, "name", None) == "BEBM":
+        return compute_partition_function_ais_ebm(
+            num_chains=num_chains,
+            num_beta=num_beta,
+            params=params,
+        )
+
     device = params.device
 
     all_betas = torch.linspace(start=0, end=1, steps=num_beta)

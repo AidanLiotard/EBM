@@ -17,6 +17,20 @@ def build_energy(
             f"Available energy types: {list(ENERGY_MAP.keys())}."
         )
 
+    if energy_type == "cnn":
+        hidden_dims = energy_kwargs.pop("hidden_dims", None)
+        if hidden_dims is not None:
+            hidden_dims = [int(x) for x in hidden_dims]
+            if hidden_dims not in ([6, 16], [6, 16, 120], [6, 16, 120, 84]):
+                raise ValueError(
+                    "LeNet CNNEnergy does not use arbitrary hidden_dims. "
+                    "Use one of: [6, 16], [6, 16, 120], [6, 16, 120, 84], "
+                    f"or omit hidden_dims. Got hidden_dims={hidden_dims}."
+                )
+            if len(hidden_dims) == 4:
+                energy_kwargs["hidden_dim"] = hidden_dims[-1]
+        energy_kwargs.setdefault("image_shape", (1, 28, 28))
+
     energy = ENERGY_MAP[energy_type](
         num_visibles=num_visibles,
         **energy_kwargs,
@@ -40,6 +54,9 @@ def restore_energy(
     match energy_type:
         case "rbm":
             energy = restore_rbm_energy(named_params)
+
+        case "cnn":
+            energy = restore_cnn_energy(named_params)
 
         case "mlp":
             energy = restore_mlp_energy(named_params)
@@ -77,6 +94,14 @@ def identify_energy_type(named_params: dict[str, np.ndarray]) -> str:
     match keys:
         case keys if {"weight", "vbias", "hbias"} <= keys:
             return "rbm"
+
+        case keys if any(
+            name.startswith("net.")
+            and name.endswith(".weight")
+            and getattr(named_params[name], "ndim", None) == 4
+            for name in keys
+        ):
+            return "cnn"
 
         case keys if any(name.startswith("net.") for name in keys):
             weight_keys = sorted(
@@ -156,6 +181,46 @@ def restore_mlp_no_w2_energy(
         hidden_dims=hidden_dims,
     )
 
+def restore_cnn_energy(
+    named_params: dict[str, np.ndarray],
+) -> CNNEnergy:
+    if "visible_field" not in named_params:
+        raise ValueError("Cannot restore CNNEnergy without visible_field.")
+
+    num_visibles = named_params["visible_field"].shape[0]
+    if num_visibles == 784:
+        image_shape = (1, 28, 28)
+    else:
+        side = int(num_visibles**0.5)
+        if side * side != num_visibles:
+            raise ValueError(
+                "Cannot infer image_shape for CNNEnergy restore from "
+                f"num_visibles={num_visibles}."
+            )
+        image_shape = (1, side, side)
+
+    linear_weight_keys = sorted(
+        [
+            name
+            for name in named_params
+            if name.startswith("net.")
+            and name.endswith(".weight")
+            and named_params[name].ndim == 2
+        ],
+        key=lambda name: int(name.split(".")[1]),
+    )
+
+    hidden_dim = named_params[linear_weight_keys[-2]].shape[0]
+    final_bias_key = linear_weight_keys[-1].replace(".weight", ".bias")
+
+    return CNNEnergy(
+        num_visibles=num_visibles,
+        image_shape=image_shape,
+        hidden_dim=hidden_dim,
+        visible_field=torch.as_tensor(named_params["visible_field"]),
+        output_bias=final_bias_key in named_params,
+    )
+
 def _normalize_hidden_dims(
     hidden_dims: list[int] | tuple[int, ...] | None = None,
     hidden_dim: int = 256,
@@ -178,6 +243,27 @@ def _init_mlp_layers(
     for module in modules:
         if isinstance(module, torch.nn.Linear):
             torch.nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+
+def _init_cnn_layers(
+    modules: torch.nn.Sequential,
+) -> None:
+    hidden_gain = 0.1
+    final_gain = 0.01
+
+    linear_layers = [
+        module for module in modules.modules() if isinstance(module, torch.nn.Linear)
+    ]
+    final_linear = linear_layers[-1]
+
+    for module in modules.modules():
+        if isinstance(module, torch.nn.Conv2d):
+            torch.nn.init.xavier_uniform_(module.weight, gain=hidden_gain)
+            torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, torch.nn.Linear):
+            gain = final_gain if module is final_linear else hidden_gain
+            torch.nn.init.xavier_uniform_(module.weight, gain=gain)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
 
@@ -305,6 +391,59 @@ class MLPEnergy(torch.nn.Module):
             weights=weights,
             target_std=target_std,
             batch_size=batch_size,
+        )
+
+
+class CNNEnergy(torch.nn.Module):
+    """Binary image energy: visible field plus a LeNet-style residual network."""
+
+    def __init__(
+        self,
+        num_visibles: int,
+        visible_field: Tensor | None = None,
+        image_shape: tuple[int, int, int] = (1, 28, 28),
+        hidden_dim: int = 84,
+        output_bias: bool = False,
+    ):
+        super().__init__()
+        self.num_visibles = int(num_visibles)
+        self.image_shape = tuple(image_shape)
+
+        c, h, w = self.image_shape
+        if self.num_visibles != c * h * w:
+            raise ValueError(
+                f"num_visibles={self.num_visibles} incompatible with "
+                f"image_shape={self.image_shape}."
+            )
+        if (h, w) != (28, 28):
+            raise ValueError(
+                f"LeNet CNNEnergy currently expects 28x28 images, got {(h, w)}."
+            )
+
+        if visible_field is None:
+            visible_field = torch.zeros(self.num_visibles)
+        self.visible_field = torch.nn.Parameter(visible_field.clone().flatten())
+
+        self.net = torch.nn.Sequential(
+            torch.nn.Conv2d(c, 6, kernel_size=5),
+            torch.nn.SiLU(),
+            torch.nn.AvgPool2d(kernel_size=2, stride=2),
+            torch.nn.Conv2d(6, 16, kernel_size=5),
+            torch.nn.SiLU(),
+            torch.nn.AvgPool2d(kernel_size=2, stride=2),
+            torch.nn.Flatten(),
+            torch.nn.Linear(16 * 4 * 4, 120),
+            torch.nn.SiLU(),
+            torch.nn.Linear(120, hidden_dim),
+            torch.nn.SiLU(),
+            torch.nn.Linear(hidden_dim, 1, bias=output_bias),
+        )
+        _init_cnn_layers(self.net)
+
+    def forward(self, v: Tensor) -> Tensor:
+        v_flat = v.reshape(v.shape[0], -1)
+        return self.net(v_flat.reshape(-1, *self.image_shape)).view(-1) - (
+            v_flat @ self.visible_field
         )
 
 
@@ -466,6 +605,7 @@ class InterpolatedEnergy(torch.nn.Module):
 
 ENERGY_MAP: dict[str, type[torch.nn.Module]] = {
     "mlp": MLPEnergy,
+    "cnn": CNNEnergy,
     "mlp_no_w2": MLPSigmoidNoW2Energy,
     "mlp_silu_no_w2": MLPSiLUNoW2Energy,
     "mlp_sigmoid_no_w2": MLPSigmoidNoW2Energy,

@@ -74,11 +74,11 @@ def _init_training(
 
     # Setup model
     if hidden_dims is None:
-        if model_type == "CEBM" and energy_type == "cnn":
+        if model_type in ("BEBM", "CEBM") and energy_type == "cnn":
             hidden_dims = [6, 16, 120, 84]
         else:
             hidden_dims = [num_hiddens]
-            
+
     if model_type == "BEBM":
         visible_field = get_visible_field_from_data(
             data=train_dataset.data,
@@ -89,6 +89,16 @@ def _init_training(
             case "mlp" | "mlp_no_w2" | "mlp_silu_no_w2" | "mlp_sigmoid_no_w2":
                 energy = build_energy(
                     energy_type=energy_type,
+                    num_visibles=num_visibles,
+                    device=device,
+                    dtype=dtype,
+                    hidden_dims=hidden_dims,
+                    visible_field=visible_field,
+                )
+
+            case "cnn":
+                energy = build_energy(
+                    energy_type="cnn",
                     num_visibles=num_visibles,
                     device=device,
                     dtype=dtype,
