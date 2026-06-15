@@ -291,7 +291,7 @@ class PTT(Sampler):
 
     def get_metrics_save(self):
         log_z = self.compute_partition_function()[-1]
-        return {"log_z": log_z.cpu().numpy()}
+        return {"log_z": log_z.detach().cpu().numpy()}
 
     # =================================== SETTER ===================================
 

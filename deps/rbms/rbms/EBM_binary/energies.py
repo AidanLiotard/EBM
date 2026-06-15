@@ -553,6 +553,10 @@ class RBMEnergy(torch.nn.Module):
         self.vbias = torch.nn.Parameter(visible_bias.clone())
         self.hbias = torch.nn.Parameter(torch.zeros(hidden_dim))
 
+    @property
+    def visible_field(self) -> Tensor:
+        return self.vbias
+
     def forward(self, v: Tensor) -> Tensor:
         hidden_field = v @ self.weight + self.hbias
         hidden_term = torch.nn.functional.softplus(hidden_field).sum(dim=1)
