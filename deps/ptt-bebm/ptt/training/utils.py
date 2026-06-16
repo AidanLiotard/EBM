@@ -95,6 +95,13 @@ def init_training_ptt(
         ptt_args["target_n_model"] = args["target_n_model"]
         ptt_args["num_steps_annealing"] = args["num_steps_annealing"]
         ptt_args["n_sample_steps"] = args["n_sample_steps"]
+        ptt_args["ais_num_chains"] = args["ais_num_chains"]
+        ptt_args["ais_num_beta"] = args["ais_num_beta"]
+        ptt_args["pre_sampler_num_chains"] = args["pre_sampler_num_chains"]
+        ptt_args["pre_sampler_trwa_chains"] = args["pre_sampler_trwa_chains"]
+        ptt_args["pre_sampler_therm_steps"] = args["pre_sampler_therm_steps"]
+        ptt_args["pre_sampler_trwa_swaps"] = args["pre_sampler_trwa_swaps"]
+        ptt_args["pre_sampler_max_steps"] = args["pre_sampler_max_steps"]
         ptt_args["target_acc_rate"] = args["target_acc_rate"]
         ptt_args["full_sampler"] = args["full_sampler"]
         ptt_args["patience"] = args["patience"]
@@ -103,7 +110,11 @@ def init_training_ptt(
 
     # Create Sampler
     list_model = [params, params.clone()]
-    log_z_init = compute_partition_function_ais(1000, 5000, params)
+    log_z_init = compute_partition_function_ais(
+        args["ais_num_chains"],
+        args["ais_num_beta"],
+        params,
+    )
     sampler_class = map_sampler.get(args["model_type"], PTT)
     sampler = sampler_class(
         list_model=list_model,
@@ -124,7 +135,14 @@ def init_training_ptt(
         num_chains=args["num_chains"],
         num_steps=args["num_steps_annealing"],
     )
-    pre_sampler = sampler.update_pre_sampler(sampler=None)
+    pre_sampler = sampler.update_pre_sampler(
+        sampler=None,
+        num_chains_init=args["pre_sampler_num_chains"],
+        trwa_num_chains=args["pre_sampler_trwa_chains"],
+        trwa_num_swaps=args["pre_sampler_trwa_swaps"],
+        trwa_therm_steps=args["pre_sampler_therm_steps"],
+        trwa_max_steps=args["pre_sampler_max_steps"],
+    )
     # init reservoir
     print("Initializing Reservoir")
     assert pre_sampler is not None

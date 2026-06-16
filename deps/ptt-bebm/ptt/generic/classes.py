@@ -483,8 +483,10 @@ class PTT(Sampler):
         self,
         sampler: PTT | None,
         num_chains_init: int = 1000,
-        # num_steps_warmup: int = 10,
-        # num_steps_between: int = 10,
+        trwa_num_chains: int = 100,
+        trwa_num_swaps: int = 100,
+        trwa_therm_steps: int = 1000,
+        trwa_max_steps: int = 20_000,
     ):
         if sampler is None:
             sampler = self
@@ -495,11 +497,13 @@ class PTT(Sampler):
             start_v=sampler.get_chains(-1)["visible"][:num_chains_init],
         )
         tau_int, tau_exp, _ = reservoir_sampler.trwa(
-            100,
+            num_chains=trwa_num_chains,
             increment=reservoir_sampler._increment,
+            num_swaps=trwa_num_swaps,
+            n_steps_therm=trwa_therm_steps,
             force_recompute=True,
             plot=False,
-            max_total_steps=20_000,
+            max_total_steps=trwa_max_steps,
         )
         if tau_int == -1:
             raise AcceptanceRateException(

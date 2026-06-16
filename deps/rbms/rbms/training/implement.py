@@ -76,6 +76,8 @@ def _init_training(
     if hidden_dims is None:
         if model_type in ("BEBM", "CEBM") and energy_type == "cnn":
             hidden_dims = [6, 16, 120, 84]
+        elif model_type == "CEBM" and energy_type == "cifar_cnn":
+            hidden_dims = [64, 128, 256]
         else:
             hidden_dims = [num_hiddens]
 

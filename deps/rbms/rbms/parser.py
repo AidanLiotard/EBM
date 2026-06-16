@@ -128,6 +128,7 @@ def add_args_init_rbm(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
             "mlp_sigmoid_no_w2",
             "rbm",
             "cnn",
+            "cifar_cnn",
         ],
         help="Energy type to use when model_type is BEBM or CEBM.",
     )

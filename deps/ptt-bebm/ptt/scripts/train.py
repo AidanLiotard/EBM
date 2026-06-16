@@ -35,6 +35,13 @@ default_args_ptt = {
     "target_n_model": 2,
     "num_steps_annealing": 100,
     "n_sample_steps": 10,
+    "ais_num_chains": 1000,
+    "ais_num_beta": 5000,
+    "pre_sampler_num_chains": 1000,
+    "pre_sampler_trwa_chains": 100,
+    "pre_sampler_therm_steps": 1000,
+    "pre_sampler_trwa_swaps": 100,
+    "pre_sampler_max_steps": 20_000,
     "target_acc_rate": 0.25,
     "patience": 3,
 }
@@ -102,6 +109,48 @@ def add_args_ptt(parser: argparse.ArgumentParser):
         type=int,
         default=None,
         help="(Defaults to 10). The number of sampling steps performed when updating the chain of replicas.",
+    )
+    ptt_args.add_argument(
+        "--ais_num_chains",
+        type=int,
+        default=None,
+        help="(Defaults to 1000). Number of AIS chains used to initialize the PTT log partition estimate.",
+    )
+    ptt_args.add_argument(
+        "--ais_num_beta",
+        type=int,
+        default=None,
+        help="(Defaults to 5000). Number of AIS interpolation temperatures used to initialize PTT.",
+    )
+    ptt_args.add_argument(
+        "--pre_sampler_num_chains",
+        type=int,
+        default=None,
+        help="(Defaults to 1000). Number of chains used for the PTT reservoir pre-sampler diagnostic.",
+    )
+    ptt_args.add_argument(
+        "--pre_sampler_trwa_swaps",
+        type=int,
+        default=None,
+        help="(Defaults to 100). Number of swaps in the PTT pre-sampler autocorrelation diagnostic.",
+    )
+    ptt_args.add_argument(
+        "--pre_sampler_trwa_chains",
+        type=int,
+        default=None,
+        help="(Defaults to 100). Number of chains used in the PTT pre-sampler autocorrelation diagnostic.",
+    )
+    ptt_args.add_argument(
+        "--pre_sampler_therm_steps",
+        type=int,
+        default=None,
+        help="(Defaults to 1000). Number of thermalization steps before the PTT pre-sampler diagnostic.",
+    )
+    ptt_args.add_argument(
+        "--pre_sampler_max_steps",
+        type=int,
+        default=None,
+        help="(Defaults to 20000). Maximum total steps in the PTT pre-sampler autocorrelation diagnostic.",
     )
     ptt_args.add_argument(
         "--target_acc_rate",
@@ -200,6 +249,13 @@ def process_args_ptt(args: dict):
         "target_n_model": args["target_n_model"],
         "num_steps_annealing": args["num_steps_annealing"],
         "n_sample_steps": args["n_sample_steps"],
+        "ais_num_chains": args["ais_num_chains"],
+        "ais_num_beta": args["ais_num_beta"],
+        "pre_sampler_num_chains": args["pre_sampler_num_chains"],
+        "pre_sampler_trwa_chains": args["pre_sampler_trwa_chains"],
+        "pre_sampler_therm_steps": args["pre_sampler_therm_steps"],
+        "pre_sampler_trwa_swaps": args["pre_sampler_trwa_swaps"],
+        "pre_sampler_max_steps": args["pre_sampler_max_steps"],
         "target_acc_rate": args["target_acc_rate"],
         "full_sampler": args["full_sampler"],
         "patience": args["patience"],
