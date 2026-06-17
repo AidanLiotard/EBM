@@ -284,6 +284,8 @@ def reset_training(args) -> tuple[PTT, EBM, dict, int]:
         map_model,
         map_sampler,
     )
+    sampler.target_acc_rate = float(args["target_acc_rate"])
+    sampler.min_acc_rate = min(0.1, sampler.target_acc_rate)
     ptt_updates = get_flagged_updates(args["filename"], "ptt")
     assert len(ptt_updates) == len(sampler)
 
@@ -350,7 +352,14 @@ def reset_training(args) -> tuple[PTT, EBM, dict, int]:
     # init reservoir
     if sampler._pre_sampler is None:
         print("---- Initializing Reservoir ----")
-        pre_sampler = sampler.update_pre_sampler(sampler=None)
+        pre_sampler = sampler.update_pre_sampler(
+            sampler=None,
+            num_chains_init=args["pre_sampler_num_chains"],
+            trwa_num_chains=args["pre_sampler_trwa_chains"],
+            trwa_num_swaps=args["pre_sampler_trwa_swaps"],
+            trwa_therm_steps=args["pre_sampler_therm_steps"],
+            trwa_max_steps=args["pre_sampler_max_steps"],
+        )
         sampler.set_pre_sampler(pre_sampler)
 
     print("---- Reducing number of models ----")

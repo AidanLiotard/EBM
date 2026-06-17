@@ -79,7 +79,7 @@ class PTT(Sampler):
         self._tmp_model: EBM | None = None
         self._hold_chains: dict[str, Tensor] | None = None
         self._tmp_chains: dict[str, Tensor] | None = None
-        self.min_acc_rate = 0.1
+        self.min_acc_rate = min(0.1, float(target_acc_rate))
         if self.full_sampler:
             self._full_sampler = PTT(
                 list_model,
